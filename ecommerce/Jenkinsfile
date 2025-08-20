@@ -1,44 +1,66 @@
 pipeline {
-  agent any  // Run on any Jenkins node with Docker installed
-
-  environment {
-    IMAGE_NAME     = 'my-django-app'
-    CONTAINER_NAME = 'my-django-app'
-    HOST_PORT      = '8000'
-    CONTAINER_PORT = '8000'
-  }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    agent {
+        docker {
+            image 'docker:24.0-dind'  // Docker-in-Docker for CLI access
+            args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'  // Mount Docker socket for macOS
+        }
     }
 
-    stage('Build Image') {
-      steps {
-        sh """
-          docker build -t ${IMAGE_NAME}:${env.BUILD_NUMBER} -t ${IMAGE_NAME}:latest .
-        """
-      }
+    environment {
+        IMAGE_NAME     = 'my-django-app'
+        CONTAINER_NAME = 'my-django-app'
+        HOST_PORT      = '8000'
+        CONTAINER_PORT = '8000'
     }
 
-    stage('Run Container') {
-      steps {
-        sh """
-          docker rm -f ${CONTAINER_NAME} || true
-          docker run -d --name ${CONTAINER_NAME} \
-            -p ${HOST_PORT}:${CONTAINER_PORT} \
-            --restart unless-stopped \
-            ${IMAGE_NAME}:latest
-        """
-      }
-    }
-  }
+    stages {
+        stage('Debug Environment') {
+            steps {
+                sh 'docker --version'  // Verify Docker CLI
+                sh 'docker info'      // Verify daemon connection
+                sh 'ls -la'           // List workspace files
+                sh 'ls -la ecommerce' // List ecommerce directory
+            }
+        }
 
-  post {
-    success {
-      echo "Up! -> http://<agent-host>:$HOST_PORT"
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Image') {
+            steps {
+                dir('ecommerce') {  // Change to ecommerce directory
+                    sh """
+                        docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} -t ${IMAGE_NAME}:latest .
+                    """
+                }
+            }
+        }
+
+        stage('Run Container') {
+            steps {
+                sh """
+                    docker rm -f ${CONTAINER_NAME} || true
+                    docker run -d --name ${CONTAINER_NAME} \
+                        -p ${HOST_PORT}:${CONTAINER_PORT} \
+                        --restart unless-stopped \
+                        ${IMAGE_NAME}:latest
+                """
+            }
+        }
     }
-  }
+
+    post {
+        always {
+            sh 'docker images'  // Debug: List images
+        }
+        success {
+            echo "Up! -> http://localhost:${HOST_PORT}"
+        }
+        failure {
+            echo "Build failed. Check console output."
+        }
+    }
 }
