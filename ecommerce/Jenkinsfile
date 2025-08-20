@@ -1,0 +1,44 @@
+pipeline {
+  agent any  // Run on any Jenkins node with Docker installed
+
+  environment {
+    IMAGE_NAME     = 'my-django-app'
+    CONTAINER_NAME = 'my-django-app'
+    HOST_PORT      = '8000'
+    CONTAINER_PORT = '8000'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Build Image') {
+      steps {
+        sh """
+          docker build -t ${IMAGE_NAME}:${env.BUILD_NUMBER} -t ${IMAGE_NAME}:latest .
+        """
+      }
+    }
+
+    stage('Run Container') {
+      steps {
+        sh """
+          docker rm -f ${CONTAINER_NAME} || true
+          docker run -d --name ${CONTAINER_NAME} \
+            -p ${HOST_PORT}:${CONTAINER_PORT} \
+            --restart unless-stopped \
+            ${IMAGE_NAME}:latest
+        """
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Up! -> http://<agent-host>:$HOST_PORT"
+    }
+  }
+}
